@@ -2,8 +2,10 @@ import os
 import psycopg2
 from flask import Flask, request, jsonify
 
+# Inicializa o aplicativo Flask
 app = Flask(__name__)
 
+# Pega a URL do banco de dados e a chave de API secreta 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 API_KEY_SECRET = os.environ.get('API_KEY_SECRET')
 
@@ -18,13 +20,15 @@ def get_db_connection():
 
 def create_tables():
     """Cria a tabela 'log_bateria' se ela não existir."""
+    print("Iniciando verificação de tabela 'log_bateria'...")
     conn = get_db_connection()
     if conn is None:
-        print("Erro: Não foi possível conectar ao DB para criar tabelas.")
+        print("ERRO CRÍTICO: Não foi possível conectar ao DB para criar tabelas. Verifique a DATABASE_URL.")
         return
 
     try:
         with conn.cursor() as cur:
+            # Estrutura da tabela log_bateria (compatível com seu .ino)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS log_bateria (
                     id SERIAL PRIMARY KEY,
@@ -39,18 +43,27 @@ def create_tables():
                 );
             """)
         conn.commit()
-        print("Tabela 'log_bateria' verificada/criada.")
+        print("SUCESSO: Tabela 'log_bateria' verificada/criada.")
     except Exception as e:
-        print(f"Erro ao criar tabela: {e}")
+        print(f"ERRO CRÍTICO ao criar tabela: {e}")
     finally:
         if conn:
             conn.close()
+
+# ====================================================================
+# AQUI ESTÁ A CORREÇÃO:
+# Chamamos a função de criação da tabela aqui, no escopo principal.
+# O Gunicorn VAI executar isso ao carregar o arquivo 'servidor.py'.
+# ====================================================================
+create_tables()
+
 
 # Rota principal para testes
 @app.route('/')
 def home():
     return "API de Log de Baterias está online."
 
+# Endpoint atualizado para receber 'log_bateria'
 @app.route('/log_bateria', methods=['POST'])
 def add_log_bateria():
     """Recebe dados de telemetria da bateria e salva no banco."""
@@ -65,6 +78,8 @@ def add_log_bateria():
     try:
         data = request.get_json()
         print(f"Recebido: {data}")
+
+        # Extrai os dados do JSON para log_bateria
         esp_id = data.get('esp32_id')
         bat_id = data.get('battery_id')
         volt = data.get('voltagem')
@@ -103,8 +118,6 @@ def add_log_bateria():
         if conn:
             conn.close()
 
-# Roda o setup inicial para criar a tabela quando o servidor iniciar
+# Este bloco não é executado pelo Gunicorn, mas não faz mal deixá-lo.
 if __name__ == "__main__":
-    create_tables()
-    # O Gunicorn vai rodar o 'app', não este bloco
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
