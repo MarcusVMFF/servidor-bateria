@@ -1,60 +1,65 @@
-import sqlite3
+import os
+import psycopg2 # Biblioteca para falar com Postgres
 from flask import Flask, request, jsonify
 
 # --- Configuração ---
-NOME_BD_SERVIDOR = "/data/servidor_central.db" 
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    print("ERRO CRÍTICO: Variável de ambiente DATABASE_URL não encontrada.")
 
+app = Flask(__name__) 
 # --- Banco de Dados ---
 def iniciar_banco_de_dados():
-    """ Cria a tabela (se não existir) no banco de dados central """
-    print("Iniciando banco de dados em: ", NOME_BD_SERVIDOR)
+    """ Cria a tabela (se não existir) no banco de dados Postgres """
+    print("Iniciando banco de dados Postgres...")
+    
+    comando_sql = """
+    CREATE TABLE IF NOT EXISTS log_testes_central (
+        id SERIAL PRIMARY KEY,
+        timestamp_recebido TIMESTAMPTZ DEFAULT NOW(),
+        esp32_id TEXT,
+        serial_number TEXT,
+        internal_resistance REAL,
+        process_time_sec REAL,
+        delta_soc REAL,
+        resultado TEXT
+    );
+    """
+    
+    conn = None
     try:
-        conn = sqlite3.connect(NOME_BD_SERVIDOR)
+        conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS log_testes_central (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp_recebido TEXT DEFAULT (DATETIME('now', 'localtime')),
-            esp32_id TEXT,
-            serial_number TEXT,
-            internal_resistance REAL,
-            process_time_sec REAL,
-            delta_soc REAL,
-            resultado TEXT
-        );
-        """)
+        cursor.execute(comando_sql)
         conn.commit()
-        conn.close()
+        cursor.close()
         print("Banco de dados pronto.")
     except Exception as e:
         print(f"ERRO CRÍTICO ao iniciar banco de dados: {e}")
+    finally:
+        if conn:
+            conn.close()
 
-# --- Inicializa o BD antes de tudo ---
-iniciar_banco_de_dados()
-
-# --- Inicia o Servidor ---
-app = Flask(__name__) 
-
-
-# --- API  ---
+# --- A API (O "Ouvinte") ---
 @app.route('/api/log_teste', methods=['POST'])
 def receber_log_teste():
     """ Este é o URL que o ESP32 vai chamar """
-
+    
     data = request.json
     print(f"Recebido: {data}")
 
     if not data:
         return jsonify({"erro": "Nenhum dado recebido"}), 400
 
+    conn = None
     try:
-        conn = sqlite3.connect(NOME_BD_SERVIDOR)
+        conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
+    
         cursor.execute("""
         INSERT INTO log_testes_central 
             (esp32_id, serial_number, internal_resistance, process_time_sec, delta_soc, resultado)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             data.get('esp32_id'),
             data.get('serial_number'),
@@ -63,16 +68,25 @@ def receber_log_teste():
             data.get('delta_soc'),
             data.get('resultado')
         ))
+        
         conn.commit()
-        conn.close()
-
+        cursor.close()
+        
         print("Log salvo no banco de dados central com sucesso.")
         return jsonify({"sucesso": True, "msg": "Log recebido"}), 201
-
+        
     except Exception as e:
         print(f"ERRO ao salvar no BD: {e}")
         return jsonify({"sucesso": False, "erro": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
 
 @app.route('/')
 def health_check():
     return "Servidor de Baterias está online.", 200
+
+# --- Roda o Servidor ---
+if __name__ == '__main__':
+    iniciar_banco_de_dados()
+    print("Inicialização concluída.")
