@@ -17,41 +17,43 @@ def get_db_connection():
         return None
 
 def create_tables():
-    """Cria a tabela 'log_testes' se ela não existir."""
+    """Cria a tabela 'log_bateria' se ela não existir."""
     conn = get_db_connection()
     if conn is None:
+        print("Erro: Não foi possível conectar ao DB para criar tabelas.")
         return
 
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS log_testes (
+                CREATE TABLE IF NOT EXISTS log_bateria (
                     id SERIAL PRIMARY KEY,
                     esp32_id TEXT,
-                    serial_number TEXT,
+                    battery_id TEXT, 
                     timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                    internal_resistance REAL,
-                    process_time_sec REAL,
-                    delta_soc REAL,
-                    resultado TEXT
+                    voltagem REAL,
+                    porcentagem REAL,
+                    soh INTEGER,
+                    ciclos INTEGER,
+                    capacidade INTEGER
                 );
             """)
         conn.commit()
-        print("Tabela 'log_testes' verificada/criada.")
+        print("Tabela 'log_bateria' verificada/criada.")
     except Exception as e:
         print(f"Erro ao criar tabela: {e}")
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # Rota principal para testes
 @app.route('/')
 def home():
     return "API de Log de Baterias está online."
 
-# Rota para o ESP32 enviar dados
-@app.route('/log_teste', methods=['POST'])
-def add_log_teste():
-    """Recebe dados de um teste de bateria e salva no banco."""
+@app.route('/log_bateria', methods=['POST'])
+def add_log_bateria():
+    """Recebe dados de telemetria da bateria e salva no banco."""
     
     # 1. Checagem de Segurança
     auth_key = request.headers.get('X-API-Key')
@@ -63,14 +65,13 @@ def add_log_teste():
     try:
         data = request.get_json()
         print(f"Recebido: {data}")
-
-        # Extrai os dados do JSON
         esp_id = data.get('esp32_id')
-        serial = data.get('serial_number')
-        ir = data.get('internal_resistance')
-        time_sec = data.get('process_time_sec')
-        d_soc = data.get('delta_soc')
-        res = data.get('resultado')
+        bat_id = data.get('battery_id')
+        volt = data.get('voltagem')
+        perc = data.get('porcentagem')
+        soh_val = data.get('soh')
+        ciclos_val = data.get('ciclos')
+        cap = data.get('capacidade')
 
     except Exception as e:
         print(f"Erro ao processar JSON: {e}")
@@ -84,14 +85,14 @@ def add_log_teste():
     try:
         with conn.cursor() as cur:
             sql = """
-                INSERT INTO log_testes 
-                (esp32_id, serial_number, internal_resistance, process_time_sec, delta_soc, resultado) 
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO log_bateria 
+                (esp32_id, battery_id, voltagem, porcentagem, soh, ciclos, capacidade) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            cur.execute(sql, (esp_id, serial, ir, time_sec, d_soc, res))
+            cur.execute(sql, (esp_id, bat_id, volt, perc, soh_val, ciclos_val, cap))
         
         conn.commit()
-        print("Log salvo com sucesso no DB.")
+        print("Log de bateria salvo com sucesso no DB.")
         return jsonify({"success": True, "message": "Log salvo"}), 201
 
     except Exception as e:
@@ -99,8 +100,11 @@ def add_log_teste():
         print(f"Erro ao inserir no DB: {e}")
         return jsonify({"error": "Erro interno do servidor"}), 500
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
+# Roda o setup inicial para criar a tabela quando o servidor iniciar
 if __name__ == "__main__":
     create_tables()
+    # O Gunicorn vai rodar o 'app', não este bloco
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
