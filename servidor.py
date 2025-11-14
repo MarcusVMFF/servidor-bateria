@@ -48,8 +48,6 @@ def create_tables():
     finally:
         if conn:
             conn.close()
-
-# Chamada da função de criação da tabela (CORREÇÃO APLICADA ANTERIORMENTE)
 create_tables()
 
 
@@ -73,7 +71,7 @@ def add_log_bateria():
     try:
         data = request.get_json()
         print(f"Recebido: {data}")
-        # Extrai os dados do JSON para log_bateria
+        
         esp_id = data.get('esp32_id')
         bat_id = data.get('battery_id')
         volt = data.get('voltagem')
@@ -108,9 +106,8 @@ def add_log_bateria():
         if conn:
             conn.close()
 
-# ====================================================================
-# ✨ NOVA ROTA DE VISUALIZAÇÃO ✨
-# ====================================================================
+# 4. Rota de visualização
+
 @app.route('/visualizar')
 def show_logs():
     """Busca os dados no banco e exibe em uma tabela HTML."""
@@ -132,7 +129,7 @@ def show_logs():
         if conn:
             conn.close()
 
-    # --- Monta a página HTML ---
+    # Monta a página HTML
     html = """
     <html>
     <head>
@@ -167,8 +164,7 @@ def show_logs():
 
     # Adiciona cada linha de log na tabela HTML
     for log in logs:
-        # Colunas do banco: [0]id, [1]esp32_id, [2]battery_id, [3]timestamp, [4]voltagem, 
-        # [5]porcentagem, [6]soh, [7]ciclos, [8]capacidade
+        # Colunas do banco: [0]id, [1]esp32_id, [2]battery_id, [3]timestamp, [4]voltagem, [5]porcentagem, [6]soh, [7]ciclos, [8]capacidade
         html += "<tr>"
         html += f"<td>{log[0]}</td>" # ID
         html += f"<td>{log[1]}</td>" # esp32_id
